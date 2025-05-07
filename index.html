@@ -5,6 +5,43 @@
     <title>Document</title>
 </head>
 <body>
-    <h1>Hello World</h1>
+    <p>
+██████╗ ██╗   ██╗██╗██╗     ██████╗     ██████╗
+██╔══██╗██║   ██║██║██║     ██╔══██╗   ██╔════╝
+██████╔╝██║   ██║██║██║     ██║  ██║   ██║     
+██╔══██╗██║   ██║██║██║     ██║  ██║   ██║     
+██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗
+╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝
+
+Usage: ./build [dev|rel|clean|help] -- [ARGS]...
+Builds C/C++ target applications using the configuration provided in the
+build.c file. The build executable will rebuild itself when changes are
+detected within the build.c file.
+
+Command options:
+    dev            Build the target executable with -DDEBUG enabled
+    rel            Build the target executable with -DRELEASE enabled
+    clean          Removes the output directory
+    build-only     Only builds the build executable not the target executable
+    help           Displays this text
+    --             Runs the executable and all args after the double dashes
+                   will be passed onto the executable.
+
+configurations to be set in the build.c file
+    cc             Compiler to use for building target and build.c
+    c_exe          Target executable name
+    c_src          List of all the .c files to be compiled
+    c_cflags       List of all the flags that will be sent to the compiler
+    build_c        Path to the build.c file from the working directory
+    build_dir      The output directory that the target executable will end up
+    build_exe      The name of the executable the build.c file will compile into
+    pre_build      List of commands to run before compiling the source files
+    post_build     List of commands to run after compiling the source files
+    pre_run        List of commands to run before running the target executable
+    post_run       List of commands to run after running the target executable
+
+ Example:
+    ./build dev -- --file=./output/
+</p>
 </body>
 </html>
