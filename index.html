@@ -1,12 +1,13 @@
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="./css/default.css">
-    <link rel="stylesheet" href="./css/main.css">
+    <link rel="stylesheet" href="./css/tokyo-night-dark.min.css">
     <script src="./js/highlight.min.js"></script>
     <title>Build Dot C</title>
 </head>
+
 <body>
     <script>
         async function fetchData() {
@@ -16,20 +17,123 @@
                 data, { language: 'c' }
             ).value;
         }
+        const unsecuredCopyToClipboard = (text) => {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+            } catch (err) {
+                console.error('Unable to copy to clipboard', err);
+            }
+            document.body.removeChild(textArea);
+        };
 
+        function copy_to_clipboard(elm_id) {
+            var text = document.getElementById(elm_id).innerText;
+            console.log(text)
+            if (window.isSecureContext && navigator.clipboard) {
+                navigator.clipboard.writeText(text);
+            } else {
+                unsecuredCopyToClipboard(text);
+            }
+
+        }
         fetchData();
-
     </script>
 
     <style>
-    .multiline {
-        white-space: pre-wrap;
-    }
+        body {
+            background-color: #1a1b26;
+        }
+
+        .title {
+            white-space: pre-wrap;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #9ece6a;
+        }
+
+        .code_block {
+            background-color: #24283b;
+            word-wrap: normal;
+            color: white;
+            margin: auto;
+            margin-bottom: 200px;
+            padding: 5px;
+            overflow: scroll;
+            scrollbar-width: none;
+            max-width: fit-content;
+            border-radius: 5px;
+        }
+
+        button {
+            padding: 5px;
+            background-color: #565f89;
+            border: none;
+            border-radius: 5px;
+            margin-top: 5px;
+            float: right;
+            margin: 5px;
+        }
+
+        button:hover {
+            background-color: #34394d;
+        }
+
+        button:active {
+            background-color: #1a1b26;
+        }
     </style>
-    <div class="container"></div>
+    <div class="title">
+██████╗ ██╗   ██╗██╗██╗     ██████╗     ██████╗
+██╔══██╗██║   ██║██║██║     ██╔══██╗   ██╔════╝
+██████╔╝██║   ██║██║██║     ██║  ██║   ██║
+██╔══██╗██║   ██║██║██║     ██║  ██║   ██║
+██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗
+╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝
+    </div>
     <div class="code_block">
+        <button type="button">
+            <a href="https://raw.githubusercontent.com/MitchNine/build_dot_c/refs/heads/master/build.c" download="build.c">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="30" height="30">
+                    <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
+                    <g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g>
+                    <g id="SVGRepo_iconCarrier">
+                        <path fill-rule="evenodd" clip-rule="evenodd"
+                            d="M23 22C23 22.5523 22.5523 23 22 23H2C1.44772 23 1 22.5523 1 22C1 21.4477 1.44772 21 2 21H22C22.5523 21 23 21.4477 23 22Z"
+                            fill="#0F0F0F"></path>
+                        <path fill-rule="evenodd" clip-rule="evenodd"
+                            d="M13.3099 18.6881C12.5581 19.3396 11.4419 19.3396 10.6901 18.6881L5.87088 14.5114C4.47179 13.2988 5.32933 11 7.18074 11L9.00001 11V3C9.00001 1.89543 9.89544 1 11 1L13 1C14.1046 1 15 1.89543 15 3L15 11H16.8193C18.6707 11 19.5282 13.2988 18.1291 14.5114L13.3099 18.6881ZM11.3451 16.6091C11.7209 16.9348 12.2791 16.9348 12.6549 16.6091L16.8193 13H14.5C13.6716 13 13 12.3284 13 11.5V3L11 3V11.5C11 12.3284 10.3284 13 9.50001 13L7.18074 13L11.3451 16.6091Z"
+                            fill="#0F0F0F"></path>
+                    </g>
+                </svg>
+            </a>
+        </button>
+        <button type="button" onclick="copy_to_clipboard('build_dot_c')">
+            <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg"
+                xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="30" height="30"
+                viewBox="0 0 115.77 122.88" style="enable-background:new 0 0 115.77 122.88" xml:space="preserve">
+                <style type="text/css">
+                    .st0 {
+                        fill-rule: evenodd;
+                        clip-rule: evenodd;
+                    }
+                </style>
+                <g>
+                    <path class="st0"
+                        d="M89.62,13.96v7.73h12.19h0.01v0.02c3.85,0.01,7.34,1.57,9.86,4.1c2.5,2.51,4.06,5.98,4.07,9.82h0.02v0.02 v73.27v0.01h-0.02c-0.01,3.84-1.57,7.33-4.1,9.86c-2.51,2.5-5.98,4.06-9.82,4.07v0.02h-0.02h-61.7H40.1v-0.02 c-3.84-0.01-7.34-1.57-9.86-4.1c-2.5-2.51-4.06-5.98-4.07-9.82h-0.02v-0.02V92.51H13.96h-0.01v-0.02c-3.84-0.01-7.34-1.57-9.86-4.1 c-2.5-2.51-4.06-5.98-4.07-9.82H0v-0.02V13.96v-0.01h0.02c0.01-3.85,1.58-7.34,4.1-9.86c2.51-2.5,5.98-4.06,9.82-4.07V0h0.02h61.7 h0.01v0.02c3.85,0.01,7.34,1.57,9.86,4.1c2.5,2.51,4.06,5.98,4.07,9.82h0.02V13.96L89.62,13.96z M79.04,21.69v-7.73v-0.02h0.02 c0-0.91-0.39-1.75-1.01-2.37c-0.61-0.61-1.46-1-2.37-1v0.02h-0.01h-61.7h-0.02v-0.02c-0.91,0-1.75,0.39-2.37,1.01 c-0.61,0.61-1,1.46-1,2.37h0.02v0.01v64.59v0.02h-0.02c0,0.91,0.39,1.75,1.01,2.37c0.61,0.61,1.46,1,2.37,1v-0.02h0.01h12.19V35.65 v-0.01h0.02c0.01-3.85,1.58-7.34,4.1-9.86c2.51-2.5,5.98-4.06,9.82-4.07v-0.02h0.02H79.04L79.04,21.69z M105.18,108.92V35.65v-0.02 h0.02c0-0.91-0.39-1.75-1.01-2.37c-0.61-0.61-1.46-1-2.37-1v0.02h-0.01h-61.7h-0.02v-0.02c-0.91,0-1.75,0.39-2.37,1.01 c-0.61,0.61-1,1.46-1,2.37h0.02v0.01v73.27v0.02h-0.02c0,0.91,0.39,1.75,1.01,2.37c0.61,0.61,1.46,1,2.37,1v-0.02h0.01h61.7h0.02 v0.02c0.91,0,1.75-0.39,2.37-1.01c0.61-0.61,1-1.46,1-2.37h-0.02V108.92L105.18,108.92z" />
+                </g>
+            </svg>
+        </button>
+
+        
         <pre><code id="build_dot_c"></code></pre>
     </div>
 
 </body>
+
 </html>
