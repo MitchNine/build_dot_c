@@ -66,8 +66,17 @@
             padding: 5px;
             overflow: scroll;
             scrollbar-width: none;
-            max-width: fit-content;
+            max-width: 655;
             border-radius: 5px;
+            z-index: 1;
+        }
+
+        .button_box {
+            display: flex;
+            max-width: 655;
+            margin: auto;
+            align-items: flex-end;
+            justify-content: right;
         }
 
         button {
@@ -76,8 +85,9 @@
             border: none;
             border-radius: 5px;
             margin-top: 5px;
-            float: right;
             margin: 5px;
+            z-index: 2;
+            position: relative;
         }
 
         button:hover {
@@ -96,7 +106,7 @@
 ██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗
 ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝
     </div>
-    <div class="code_block">
+    <div class="button_box">
         <button type="button">
             <a href="https://raw.githubusercontent.com/MitchNine/build_dot_c/refs/heads/master/build.c" download="build.c">
                 <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="30" height="30">
@@ -129,8 +139,8 @@
                 </g>
             </svg>
         </button>
-
-        
+    </div>
+    <div class="code_block">
         <pre><code id="build_dot_c"></code></pre>
     </div>
 
