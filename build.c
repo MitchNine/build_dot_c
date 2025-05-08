@@ -29,8 +29,9 @@
 
 char* cc = "clang";          // Compiler to use for building target and build.c
 char* c_exe = "example_app"; // Name of the target executable
-char* c_src[] = {            // List of all the .c files to be compiled
-	"src/main.c",
+char* c_src[] =              // List of all the .c files to be compiled
+{
+    "src/main.c",
     // Add in all the .c files here...
 };
 char* c_cflags[] = {         // List of all the flags that will be sent to the 
