@@ -21,13 +21,6 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  *****************************************************************************
-
- * ██████╗ ██╗   ██╗██╗██╗     ██████╗     ██████╗
- * ██╔══██╗██║   ██║██║██║     ██╔══██╗   ██╔════╝
- * ██████╔╝██║   ██║██║██║     ██║  ██║   ██║
- * ██╔══██╗██║   ██║██║██║     ██║  ██║   ██║
- * ██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗
- * ╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝
  *
  * Builds C/C++ target applications using the configuration provided in the
  * build.c file. The build executable will rebuild itself when changes are
