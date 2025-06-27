@@ -1,23 +1,23 @@
 /******************************************************************************
  * MIT License
- * 
+ *
  * Copyright (c) 2025 Mitchell Jenkins
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to 
- * deal in the Software without restriction, including without limitation the 
- * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or 
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  * sell copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
- * The above copyright notice and this permission notice shall be included in 
+ *
+ * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
  * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING 
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
  * IN THE SOFTWARE.
  *****************************************************************************
@@ -27,15 +27,14 @@
  * detected within the build.c file.
  *****************************************************************************/
 
-char* cc = "clang";          // Compiler to use for building target and build.c
-char* c_exe = "example_app"; // Name of the target executable
-char* c_src[] =              // List of all the .c files to be compiled
+const char* cc = "clang";
+const char* c_exe = "example_app";
+const char* c_src[] =
 {
     "src/main.c",
-    // Add in all the .c files here...
 };
-char* c_cflags[] = {         // List of all the flags that will be sent to the compiler
-	"-MD",                   // -MD is deeded for header dependance check
+char* c_cflags[] = {
+	"-MD",
 #if defined(DEBUG)
 	"-DDEBUG", "-g",
 #elif defined(RELEASE)
@@ -43,24 +42,15 @@ char* c_cflags[] = {         // List of all the flags that will be sent to the c
 #endif
 	"-Wall",
 };
+char* c_clibs[] = {
+    "-lpthread"
+};
 
-char *build_cc = "clang";          // Compiler to use for building the build.c file
-char* build_c   = "./build.c";     // Path to the build.c file
-char* build_dir = "./out";         // The output directory
-char* build_exe = "./build";       // build.c executable name
-
-char* pre_build[] = {              // List of commands to run before compiling 
-    "echo 'start build'"           // the source files
-};
-char* post_build[] = {             // List of commands to run after compiling 
-    "echo 'end build'"             // the source files
-};
-char* pre_run[] = {                // List of commands to run before running 
-    "echo 'start run'"             // the target executable
-};
-char* post_run[] = {               // List of commands to run after running 
-    "echo 'end run'"               // the target executable
-};
+const char* build_cc  = "clang";
+const char* build_c   = "./build.c";
+const char* build_dir = "./out";
+const char* build_exe = "./build";
+const char* build_ver = "0.8.3";
 
 /*****************************************************************************
  *****************************************************************************/
@@ -83,6 +73,7 @@ void print_help() {
 "    rel            Build the target executable with -DRELEASE enabled\n"
 "    clean          Removes the output directory\n"
 "    build-only     Only builds the build executable not the target executable\n"
+"    version        Displays the version of the build.c\n"
 "    help           Displays this text\n"
 "    --             Runs the executable and all args after the double dashes\n"
 "                   will be passed onto the executable.\n\n"
@@ -95,10 +86,6 @@ void print_help() {
 "    build_c        Path to the build.c file from the working directory\n"
 "    build_dir      The output directory that the target executable will end up\n"
 "    build_exe      The name of the executable the build.c file will compile into\n"
-"    pre_build      List of commands to run before compiling the source files\n"
-"    post_build     List of commands to run after compiling the source files\n"
-"    pre_run        List of commands to run before running the target executable\n"
-"    post_run       List of commands to run after running the target executable\n\n"
 " Example:\n"
 "    ./build dev -- --file=./output/\n");
 }
@@ -142,6 +129,7 @@ int exec(const char *format, ...) {
     vsprintf(cmd, format, val);
     va_end(val);
     printf("[\e[35mCMD\e[0m] %s\n", cmd);
+    fflush(stdout);
     FILE *fp = popen(cmd, "r");
     assert(fp && "popen failed");
     while (fgets(buff, sizeof(buff), fp) != NULL) printf("%s", buff);
@@ -153,37 +141,52 @@ int rec_mkdir(const char *dir) {
     for (char *p = tmp + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(tmp, S_IRWXU); *p = '/'; }
     return mkdir(tmp, S_IRWXU);
 }
-void append_flags(char *cmd, char **flags, int n) {
-    for (int i = 0; i < n; i++) sprintf(cmd + strlen(cmd), "%s ", flags[i]);
+void append_flags(char *cmd, char *const *flags, int n) {
+    for (int i = 0; i < n; i++) snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), "%s ", flags[i]);
 }
 
-void get_build(struct BuildContext *ctx, char *lockfile) {
+void get_build(struct BuildContext *ctx, const char *lockfile) {
     FILE *build_file_info;
     if ((build_file_info = fopen(lockfile, "r"))) {
-        assert(fread(&ctx, sizeof(struct BuildContext), 1, build_file_info) > 0);
+        assert(fread(ctx, sizeof(struct BuildContext), 1, build_file_info) > 0);
         fclose(build_file_info);
     } else if ((build_file_info = fopen(lockfile, "w")))
         fclose(build_file_info);
 }
-void set_build(struct BuildContext *ctx, char *lockfile) {
+void set_build(const struct BuildContext *ctx, const char *lockfile) {
     FILE *build_file_info;
     if ((build_file_info = fopen(lockfile, "w"))) {
-        assert(fwrite(&ctx, sizeof(struct BuildContext), 1, build_file_info) > 0);
+        assert(fwrite(ctx, sizeof(struct BuildContext), 1, build_file_info) > 0);
         fclose(build_file_info);
     }
 }
 
-bool check_deps(const char *path, struct BuildContext *ctx) {
+// Helper to copy a filename and strip its extension (in-place)
+void strip_extension(const char *src, char *dst, size_t dst_size) {
+    snprintf(dst, dst_size, "%s", src);
+    char *dot = strrchr(dst, '.');
+    if (dot) *dot = '\0';
+}
+
+// Helper to generate an object or dependency file path
+void build_file_path(char *dst, size_t dst_size, const char *dir, const char *subdir, const char *base, const char *ext) {
+    char base_noext[PATH_MAX];
+    strip_extension(base, base_noext, sizeof(base_noext));
+    snprintf(dst, dst_size, "%s/%s/%s%s", dir, subdir, base_noext, ext);
+}
+
+bool check_deps(const char *path, const struct BuildContext *ctx) {
     char output_file[PATH_MAX];
     struct stat source_file_stat = STAT_FILE(path);
     if (source_file_stat.st_mtim.tv_sec >= ctx->last_build) return true;
     struct Path p = split_path(path);
     char *line = NULL;
     bool dep_has_changed = false;
-    sprintf(output_file, "%s/%s/%s.d", build_dir, p.dir, strtok(p.base, "."));
+    build_file_path(output_file, sizeof(output_file), build_dir, p.dir, p.base, ".d");
     FILE *depfile = fopen(output_file, "r");
     if (!depfile) return true;
-    while (getline(&line, NULL, depfile) != -1) {
+    size_t line_len = 0;
+    while (getline(&line, &line_len, depfile) != -1) {
         char *tok = strtok(line, " ");
         bool first = true;
         while (tok != NULL) {
@@ -199,52 +202,61 @@ bool check_deps(const char *path, struct BuildContext *ctx) {
     fclose(depfile);
     return dep_has_changed;
 }
-int compile_file(const char *path, struct BuildContext *ctx, bool *changed) {
-    char cmd[PATH_MAX], output_dir[PATH_MAX];
+int compile_file(const char *path, const struct BuildContext *ctx, bool *changed) {
+    char cmd[PATH_MAX], output_dir[PATH_MAX], obj_file[PATH_MAX];
     struct Path p = split_path(path);
     *changed = check_deps(path, ctx);
     if (!*changed) return 0;
-    sprintf(output_dir, "%s/%s", build_dir, p.dir);
+    snprintf(output_dir, PATH_MAX, "%s/%s", build_dir, p.dir);
     struct stat st = {0};
-    if (stat(output_dir, &st) == -1) if (rec_mkdir(output_dir) == -1) printf("Failed %s\n", strerror(errno));
-    sprintf(cmd, "%s -c %s -o %s/%s/%s.o ", cc, path, build_dir, p.dir, strtok(p.base, "."));
+    if (stat(output_dir, &st) == -1) if (rec_mkdir(output_dir) == -1) fprintf(stderr, "Failed %s\n", strerror(errno));
+    build_file_path(obj_file, sizeof(obj_file), build_dir, p.dir, p.base, ".o");
+    snprintf(cmd, PATH_MAX, "%s -c %s -o %s ", cc, path, obj_file);
     append_flags(cmd, c_cflags, ARRAY_SIZE(c_cflags));
     return exec(cmd);
 }
-bool compile_exe() {
-    char cmd[PATH_MAX] = {0};
-    sprintf(cmd, "%s -o %s/%s ", cc, build_dir, c_exe);
+bool compile_exe(void) {
+    char cmd[PATH_MAX] = {0}, obj_file[PATH_MAX];
+    snprintf(cmd, PATH_MAX, "%s -o %s/%s ", cc, build_dir, c_exe);
     append_flags(cmd, c_cflags, ARRAY_SIZE(c_cflags));
     for (int i = 0; i < (sizeof(c_src) / sizeof(c_src[0])); i++) {
-        char *path = c_src[i];
+        const char *path = c_src[i];
         struct Path p = split_path(path);
-        sprintf(cmd + strlen(cmd), "%s/%s/%s.o ", build_dir, p.dir, strtok(p.base, "."));
+        build_file_path(obj_file, sizeof(obj_file), build_dir, p.dir, p.base, ".o");
+        snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), "%s ", obj_file);
     }
+    append_flags(cmd, c_clibs, ARRAY_SIZE(c_clibs));
     return (exec(cmd) == 0);
+}
+
+bool parse_args(struct Config* conf, int argc, char *const argv[]) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--") == 0) {
+            conf->run_argc = i;
+            conf->run = true;
+            break;
+        }
+        if (!strcmp(argv[i], "dev")) conf->mode = MODE_DEV;
+        else if (!strcmp(argv[i], "rel")) conf->mode = MODE_REL;
+        else if (!strcmp(argv[i], "clean")) conf->clean = true;
+        else if (!strcmp(argv[i], "build-only")) conf->build_only = true;
+        else if (!strcmp(argv[i], "version")) { printf("Build version %s\n", build_ver); }
+        else if (!strcmp(argv[i], "help")) { print_help(); return false; }
+        else {
+            printf("[\033[31mERROR\033[0m] Unknown command '%s'\n\n", argv[i]);
+            print_help();
+            return false;
+        }
+    }
+    return true;
 }
 
 int main(int argc, char *argv[]) {
     struct Config conf = {0};
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--") == 0) {
-            conf.run_argc = i;
-            conf.run = true;
-            break;
-        }
-        if (!strcmp(argv[i], "dev")) conf.mode = MODE_DEV;
-        else if (!strcmp(argv[i], "rel")) conf.mode = MODE_REL;
-        else if (!strcmp(argv[i], "clean")) conf.clean = true;
-        else if (!strcmp(argv[i], "build-only")) conf.build_only = true;
-        else if (!strcmp(argv[i], "help")) { print_help(); return 0; }
-        else {
-            printf("[\033[31mERROR\033[0m] Unknown command '%s'\n\n", argv[i]);
-            print_help();
-            return 1;
-        }
-    }
+    if (!parse_args(&conf, argc, argv)) return 0;
 
     char build_file_lock[PATH_MAX];
-    sprintf(build_file_lock, "%s/%s.lock", build_dir, build_exe);
+    snprintf(build_file_lock, PATH_MAX, "%s/%s.lock", build_dir, build_exe);
 
     struct BuildContext build_ctx = {0};
     get_build(&build_ctx, build_file_lock);
@@ -278,15 +290,14 @@ int main(int argc, char *argv[]) {
         set_build(&build_ctx, build_file_lock);
         if (!conf.build_only) {
             char cmd[PATH_MAX];
-            sprintf(cmd, "%s", build_exe);
+            snprintf(cmd, PATH_MAX, "%s", build_exe);
             for (int i = 1; i < argc; i++) {
                 if (strcmp(argv[i], "clean") == 0) continue;
-                sprintf(cmd, "%s %s", cmd, argv[i]);
+                snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), " %s", argv[i]);
             }
             return exec(cmd);
         } else return 0;
     }
-    for (int i = 0; i < sizeof(pre_build) / sizeof(pre_build[0]); i++) exec(pre_build[i]);
     bool change = false, file_changed = false;
     for (int i = 0; i < (sizeof(c_src) / sizeof(c_src[0])); i++) {
         int ret = compile_file(c_src[i], &build_ctx, &file_changed);
@@ -307,15 +318,13 @@ int main(int argc, char *argv[]) {
     build_ctx.last_build = time(NULL);
     build_ctx.lock = false;
     set_build(&build_ctx, build_file_lock);
-    for (int i = 0; i < sizeof(post_build) / sizeof(post_build[0]); i++) exec(post_build[i]);
     int ret = 0;
     if (conf.run) {
-        for (int i = 0; i < sizeof(pre_run) / sizeof(pre_run[0]); i++) exec(pre_run[i]);
         char cmd[PATH_MAX];
-        sprintf(cmd, "%s/%s", build_dir, c_exe);
-        for (int i = conf.run_argc + 1; i < argc; i++) sprintf(cmd, "%s %s", cmd, argv[i]);
+        snprintf(cmd, PATH_MAX, "%s/%s", build_dir, c_exe);
+        for (int i = conf.run_argc + 1; i < argc; i++)
+            snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), " %s", argv[i]);
         ret = exec(cmd);
-        for (int i = 0; i < sizeof(post_run) / sizeof(post_run[0]); i++) exec(post_run[i]);
     }
     return ret;
 }
