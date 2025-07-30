@@ -1,4 +1,11 @@
-# build_dot_c
+```
+██████╗ ██╗   ██╗██╗██╗     ██████╗     ██████╗
+██╔══██╗██║   ██║██║██║     ██╔══██╗   ██╔════╝
+██████╔╝██║   ██║██║██║     ██║  ██║   ██║     
+██╔══██╗██║   ██║██║██║     ██║  ██║   ██║     
+██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗
+╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝
+```
 
 A self-hosting build system for C/C++ projects, configured entirely in a single `build.c` file.  
 The build executable will automatically rebuild itself when changes are detected in `build.c`.
