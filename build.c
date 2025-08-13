@@ -124,12 +124,12 @@ void print_help() {
 "██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗\n"
 "╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝\n"
 "version %s\n\n"
-"Usage: ./build [dev|rel|clean|help] -- [ARGS]...\n"
+"Usage: ./build [dbg|rel|clean|no-threading|build-only|version|help] -- [ARGS]...\n"
 "Builds C/C++ target applications using the configuration provided in the\n"
 "build.c file. The build executable will rebuild itself when changes are\n"
 "detected within the build.c file.\n\n"
 "Command options:\n"
-"    dbd            Build the target executable with -DDEBUG enabled\n"
+"    dbg            Build the target executable with -DDEBUG enabled\n"
 "    rel            Build the target executable with -DRELEASE enabled\n"
 "    clean          Removes the output directory\n"
 "    no-threading   Stops from using multithread for building files\n"
@@ -187,7 +187,7 @@ unsigned int get_array_length(const char *const *array)
 } // }}}
 
 // Dependency functions
-const __time_t get_file_modified_time(const char *file_path)
+__time_t get_file_modified_time(const char *file_path)
 { // {{{
     struct stat file_stat;
     if (stat(file_path, &file_stat) == -1) {
@@ -196,7 +196,7 @@ const __time_t get_file_modified_time(const char *file_path)
     }
     return file_stat.st_mtime;
 } // }}}
-const __time_t last_dependencies_modified(const char *file_path)
+__time_t last_dependencies_modified(const char *file_path)
 { // {{{
     FILE *fp = fopen(file_path, "r");
     if (fp == NULL) {
@@ -205,7 +205,7 @@ const __time_t last_dependencies_modified(const char *file_path)
     }
     __time_t last_modified = 0;
 
-    char* line;
+    char* line = NULL;
     size_t line_len = 0;
     while (getline(&line, &line_len, fp) != -1) {
         char *tok = strtok(line, " ");
@@ -230,7 +230,7 @@ const __time_t last_dependencies_modified(const char *file_path)
     return last_modified;
 } // }}}
 
-bool serialize_lock_file(const char *file_path, struct LockFile *lock)
+bool serialize_lock_file(const char *file_path, const struct LockFile *lock)
 { // {{{
     FILE *fp = fopen(file_path, "w+");
     if (fp == NULL) {
@@ -283,7 +283,7 @@ void get_filename_without_path(const char *src, char *dst, size_t dst_size)
 // Build functions
 void *build_file(void *arg)
 { // {{{
-    char *cmd = (char *)arg;
+    const char *cmd = (const char *)arg;
     fflush(stdout);
     int status = exec("%s", cmd);
     if (status != 0) {
@@ -291,7 +291,7 @@ void *build_file(void *arg)
     }
     return NULL;
 } // }}}
-int make_targets(config_t *config, char* build_file_cmd[], unsigned int size)
+int make_targets(const config_t *config, char* build_file_cmd[], unsigned int size)
 { // {{{
     for (unsigned int i = 0; i < size; i++) {
         if (build_file_cmd[i] == NULL) {
@@ -299,7 +299,7 @@ int make_targets(config_t *config, char* build_file_cmd[], unsigned int size)
             return -1;
         }
 
-        char* cmd = build_file_cmd[i];
+        char* const cmd = build_file_cmd[i];
         char dir[PATH_MAX], filename[PATH_MAX];
 
         // Strip the extension and get the directory and filename
@@ -336,13 +336,13 @@ int make_targets(config_t *config, char* build_file_cmd[], unsigned int size)
     }
     return 0;
 } // }}}
-int make_executable(config_t *config, char* build_exe_cmd)
+int make_executable(const config_t *config, char* build_exe_cmd)
 { // {{{
     if (config->exe == NULL) {
         fprintf(stderr, "Error: config->exe is NULL\n");
         return -1;
     }
-    char* cmd = build_exe_cmd;
+    char* const cmd = build_exe_cmd;
     snprintf(cmd, PATH_MAX, "%s -o %s/%s ", config->cc, config->dir, config->exe);
     for (unsigned int i = 0; i < get_array_length(config->src); i++) {
         if (config->src[i] == NULL) {
@@ -357,7 +357,7 @@ int make_executable(config_t *config, char* build_exe_cmd)
     append_strings(cmd, config->libs);
     return 0;
 } // }}}
-int make_build(BuildMode mode, char* cmd)
+int make_build(const BuildMode mode, char* cmd)
 { // {{{
     if (build.cc == NULL || build.file == NULL || build.exe == NULL) {
         fprintf(stderr, "Error: Build configuration is incomplete\n");
@@ -382,7 +382,7 @@ int make_build(BuildMode mode, char* cmd)
 } // }}}
 
 // Compile function
-int compile_build_file(const char *lock_file_path, int argc, char *argv[], InternalConfig *conf)
+int compile_build_file(const char *lock_file_path, int argc, char *argv[], const InternalConfig *conf)
 { // {{{
     __time_t build_file_last_modified = get_file_modified_time(build.file);
 
@@ -431,8 +431,9 @@ int compile_build_file(const char *lock_file_path, int argc, char *argv[], Inter
 
     return 0; // No need to rebuild the build file
 } // }}}
-bool compile_files(config_t *config, bool multithreaded)
+bool compile_files(const config_t *config, bool multithreaded)
 { // {{{
+    (void)config; // Mark as intentionally unused
     // Allocate memory for build commands
     unsigned int size = get_array_length(c_config.src);
     char* file_cmd[size];
@@ -482,7 +483,7 @@ bool compile_files(config_t *config, bool multithreaded)
 
     return files_built;
 } // }}}
-bool compile_exe(config_t *config)
+bool compile_exe(const config_t *config)
 { // {{{
     char build_exe_cmd[PATH_MAX];
     if (make_executable(config, build_exe_cmd) != 0) {
