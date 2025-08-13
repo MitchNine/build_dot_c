@@ -101,6 +101,7 @@ typedef enum BuildMode {
 
 struct LockFile {
     bool lock;           // Indicates if the build is locked
+    bool rebuilding;     // Indicates if the build file has been modified
     long last_build;     // Timestamp of the last build
     BuildMode last_mode; // Last build mode used
 } lockfile = { false, 0, MODE_NONE };
@@ -386,8 +387,12 @@ int compile_build_file(const char *lock_file_path, int argc, char *argv[], Inter
     __time_t build_file_last_modified = get_file_modified_time(build.file);
 
     // If the build file has been modified, rebuild it
-    if (build_file_last_modified >= lockfile.last_build ||
-            conf->mode != lockfile.last_mode || conf->clean) {
+    if (build_file_last_modified >= lockfile.last_build
+            || lockfile.last_mode != conf->mode) {
+
+        if (lockfile.rebuilding) {
+            return 0; // Already rebuilding, no need to rebuild again
+        }
 
         // Rebuild the build file
         char build_file_cmd[PATH_MAX];
@@ -401,8 +406,14 @@ int compile_build_file(const char *lock_file_path, int argc, char *argv[], Inter
             return -1;
         }
 
-        lockfile.last_build = time(NULL);
+        if (lockfile.last_mode != conf->mode) {
+            lockfile.last_build = 0; // Reset last build time if the mode has changed
+        } else {
+            lockfile.last_build = time(NULL);
+        }
         lockfile.lock = false;
+        lockfile.last_mode = conf->mode;
+        lockfile.rebuilding = true; // Mark the build file as dirty since it has been rebuilt
         serialize_lock_file(lock_file_path, &lockfile);
 
         char cmd[PATH_MAX];
@@ -549,14 +560,18 @@ int main(int argc, char *argv[])
     // Build the build file if it has changed
     int ret = compile_build_file(lock_file_path, argc, argv, &conf);
     if (ret != 0) {
+        lockfile.last_mode = conf.mode;
         lockfile.lock = false;
+        lockfile.rebuilding = false;
         serialize_lock_file(lock_file_path, &lockfile);
         return ret;
     }
 
     // If only building the build file, exit after building
     if (conf.build_only) {
+        lockfile.last_mode = conf.mode;
         lockfile.lock = false;
+        lockfile.rebuilding = false;
         serialize_lock_file(lock_file_path, &lockfile);
         return 0;
     }
@@ -568,7 +583,9 @@ int main(int argc, char *argv[])
     if (files_built != 0) {
         if (!compile_exe(&c_config)) {
             fprintf(stderr, "Error: Failed to compile the executable\n");
+            lockfile.last_mode = conf.mode;
             lockfile.lock = false;
+            lockfile.rebuilding = false;
             serialize_lock_file(lock_file_path, &lockfile);
             return -1;
         }
@@ -579,6 +596,8 @@ int main(int argc, char *argv[])
     // Update the lock file after the build is complete and release the lock
     lockfile.last_build = time(NULL);
     lockfile.lock = false;
+    lockfile.last_mode = conf.mode;
+    lockfile.rebuilding = false; // Reset rebuilding state after a successful build
 
     // Serialize the lock file to save the state
     serialize_lock_file(lock_file_path, &lockfile);
