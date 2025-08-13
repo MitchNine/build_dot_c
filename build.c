@@ -27,69 +27,54 @@
  * detected within the build.c file.
  *****************************************************************************/
 
-const char* cc = "clang";
-const char* c_exe = "example_app";
-const char* c_src[] =
-{
-    "src/main.c",
-};
-char* c_cflags[] = {
-	"-MD",
-#if defined(DEBUG)
-	"-DDEBUG", "-g",
-#elif defined(RELEASE)
-	"-DRELEASE", "-O3",
-#endif
-	"-Wall",
-};
-char* c_clibs[] = {
-    "-lpthread"
-};
+#include <stdlib.h>
 
-const char* build_cc  = "clang";
-const char* build_c   = "./build.c";
-const char* build_dir = "./out";
-const char* build_exe = "./build";
-const char* build_ver = "0.8.3";
+struct Config {
+    const char *cc;             // Compiler to use for building target and build.c
+    const char *exe;            // Target executable name
+    const char *dir;            // The output directory that the target executable will end up
+    const char *const *src;     // List of all the .c files to be compiled
+    const char *const *flags;   // List of all the flags that will be sent to the compiler
+    const char *const *libs;    // List of libraries to link against
+} c_config = {
+    .cc = "gcc",
+    .exe = "example_app",
+    .dir = "./out",
+
+    .src = (const char *[]) {
+        "./src/main.c",
+        NULL, // Sentinel to mark the end of the array
+    },
+
+    .flags = (const char *[]) {
+        "-MD",
+        "-Wall",
+#ifdef DEBUG
+        "-fsanitize=address",
+        "-O0",
+        "-DDEBUG",
+        "-g",
+#endif
+        NULL, // Sentinel to mark the end of the array
+    },
+
+    .libs = (const char *[]) {
+        NULL, // Sentinel to mark the end of the array
+    },
+};
+typedef struct Config config_t;
+
+struct Build {
+    const char *cc;    // Compiler to use for building target and build.c
+    const char *file;  // Target executable name
+    const char *exe;   // The name of the executable the build.c file will compile into
+    const char *ver;   // Version of the build.c
+} build = { "clang", "./build.c", "./build", "1.0.0" };
+typedef struct Build build_t;
 
 /*****************************************************************************
  *****************************************************************************/
-
 #include <stdio.h>
-void print_help() {
-    printf("\n"
-"██████╗ ██╗   ██╗██╗██╗     ██████╗     ██████╗\n"
-"██╔══██╗██║   ██║██║██║     ██╔══██╗   ██╔════╝\n"
-"██████╔╝██║   ██║██║██║     ██║  ██║   ██║     \n"
-"██╔══██╗██║   ██║██║██║     ██║  ██║   ██║     \n"
-"██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗\n"
-"╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝\n\n"
-"Usage: ./build [dev|rel|clean|help] -- [ARGS]...\n"
-"Builds C/C++ target applications using the configuration provided in the\n"
-"build.c file. The build executable will rebuild itself when changes are\n"
-"detected within the build.c file.\n\n"
-"Command options:\n"
-"    dev            Build the target executable with -DDEBUG enabled\n"
-"    rel            Build the target executable with -DRELEASE enabled\n"
-"    clean          Removes the output directory\n"
-"    build-only     Only builds the build executable not the target executable\n"
-"    version        Displays the version of the build.c\n"
-"    help           Displays this text\n"
-"    --             Runs the executable and all args after the double dashes\n"
-"                   will be passed onto the executable.\n\n"
-"configurations to be set in the build.c file\n"
-"    cc             Compiler to use for building target and build.c\n"
-"    c_exe          Target executable name\n"
-"    c_src          List of all the .c files to be compiled\n"
-"    c_cflags       List of all the flags that will be sent to the compiler\n"
-"    build_cc       Compiler to use for building the build.c file\n"
-"    build_c        Path to the build.c file from the working directory\n"
-"    build_dir      The output directory that the target executable will end up\n"
-"    build_exe      The name of the executable the build.c file will compile into\n"
-" Example:\n"
-"    ./build dev -- --file=./output/\n");
-}
-
 #include <assert.h>
 #include <errno.h>
 #include <libgen.h>
@@ -97,7 +82,6 @@ void print_help() {
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -105,24 +89,61 @@ void print_help() {
 #include <time.h>
 #include <unistd.h>
 #include <utime.h>
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#include <pthread.h>
 #define STAT_FILE(file_path) \
 ({ struct stat __stat; stat(file_path, &__stat); __stat; })
 
-enum Mode { MODE_NONE, MODE_DEV, MODE_REL };
-struct BuildContext { bool lock; time_t last_build; time_t last_modif; enum Mode last_mode; };
-struct Config { bool run; bool clean; bool build_only; int run_argc; enum Mode mode; };
-struct Path { char dir[PATH_MAX]; char base[PATH_MAX]; };
+typedef enum BuildMode {
+    MODE_NONE,
+    MODE_DEV,
+    MODE_REL
+} BuildMode;
 
-struct Path split_path(const char *path) {
-    struct Path parts = {{0}, {0}};
-    char *tmp1 = strdup(path), *tmp2 = strdup(path);
-    snprintf(parts.base, sizeof(parts.base), "%s", basename(tmp1));
-    snprintf(parts.dir, sizeof(parts.dir), "%s", dirname(tmp2));
-    free(tmp1); free(tmp2);
-    return parts;
+struct LockFile {
+    bool lock;           // Indicates if the build is locked
+    long last_build;     // Timestamp of the last build
+    BuildMode last_mode; // Last build mode used
+} lockfile = { false, 0, MODE_NONE };
+
+typedef struct InternalConfig {
+    bool run;        // Indicates if the build should run after building
+    bool clean;      // Indicates if the build directory should be cleaned before building
+    bool build_only; // Indicates if only the build file should be built without running it
+    bool threaded;   // Indicates if the build should be done in a threaded manner
+    int run_argc;    // Number of arguments to pass to the build file when running it
+    BuildMode mode;  // Build mode to use (none, development, or release)
+} InternalConfig;
+
+void print_help() {
+    printf("\n"
+"██████╗ ██╗   ██╗██╗██╗     ██████╗     ██████╗\n"
+"██╔══██╗██║   ██║██║██║     ██╔══██╗   ██╔════╝\n"
+"██████╔╝██║   ██║██║██║     ██║  ██║   ██║     \n"
+"██╔══██╗██║   ██║██║██║     ██║  ██║   ██║     \n"
+"██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗\n"
+"╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝\n"
+"version %s\n\n"
+"Usage: ./build [dev|rel|clean|help] -- [ARGS]...\n"
+"Builds C/C++ target applications using the configuration provided in the\n"
+"build.c file. The build executable will rebuild itself when changes are\n"
+"detected within the build.c file.\n\n"
+"Command options:\n"
+"    dbd            Build the target executable with -DDEBUG enabled\n"
+"    rel            Build the target executable with -DRELEASE enabled\n"
+"    clean          Removes the output directory\n"
+"    no-threading   Stops from using multithread for building files\n"
+"    build-only     Only builds the build executable not the target executable\n"
+"    version        Displays the version of the build.c\n"
+"    help           Displays this text\n"
+"    --             Runs the executable and all args after the double dashes\n"
+"                   will be passed onto the executable.\n\n"
+" Example:\n"
+"    ./build dev -- --file=./output/\n", build.ver);
 }
-int exec(const char *format, ...) {
+
+// Utility functions
+int exec(const char *format, ...)
+{ // {{{
     char cmd[PATH_MAX], buff[PATH_MAX];
     va_list val;
     va_start(val, format);
@@ -134,197 +155,441 @@ int exec(const char *format, ...) {
     assert(fp && "popen failed");
     while (fgets(buff, sizeof(buff), fp) != NULL) printf("%s", buff);
     return pclose(fp);
-}
-int rec_mkdir(const char *dir) {
+} // }}}
+int recursive_mkdir(const char *dir)
+{ // {{{
     char tmp[PATH_MAX];
     snprintf(tmp, sizeof(tmp), "%s", dir);
     for (char *p = tmp + 1; *p; p++) if (*p == '/') { *p = 0; mkdir(tmp, S_IRWXU); *p = '/'; }
     return mkdir(tmp, S_IRWXU);
-}
-void append_flags(char *cmd, char *const *flags, int n) {
-    for (int i = 0; i < n; i++) snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), "%s ", flags[i]);
-}
-
-void get_build(struct BuildContext *ctx, const char *lockfile) {
-    FILE *build_file_info;
-    if ((build_file_info = fopen(lockfile, "r"))) {
-        assert(fread(ctx, sizeof(struct BuildContext), 1, build_file_info) > 0);
-        fclose(build_file_info);
-    } else if ((build_file_info = fopen(lockfile, "w")))
-        fclose(build_file_info);
-}
-void set_build(const struct BuildContext *ctx, const char *lockfile) {
-    FILE *build_file_info;
-    if ((build_file_info = fopen(lockfile, "w"))) {
-        assert(fwrite(ctx, sizeof(struct BuildContext), 1, build_file_info) > 0);
-        fclose(build_file_info);
+} // }}}
+void append_strings(char *cmd, const char *const *flags)
+{ // {{{
+    for (int i = 0;; i++) {
+        if (flags[i] == NULL) break; // Sentinel check for end of array
+        snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), "%s ", flags[i]);
     }
-}
-
-// Helper to copy a filename and strip its extension (in-place)
-void strip_extension(const char *src, char *dst, size_t dst_size) {
+} // }}}
+void strip_extension(const char *src, char *dst, size_t dst_size)
+{ // {{{
     snprintf(dst, dst_size, "%s", src);
     char *dot = strrchr(dst, '.');
     if (dot) *dot = '\0';
-}
+} // }}}
+unsigned int get_array_length(const char *const *array)
+{ // {{{
+    unsigned int length = 0;
+    while (array[length] != NULL) {
+        length++;
+    }
+    return length;
+} // }}}
 
-// Helper to generate an object or dependency file path
-void build_file_path(char *dst, size_t dst_size, const char *dir, const char *subdir, const char *base, const char *ext) {
-    char base_noext[PATH_MAX];
-    strip_extension(base, base_noext, sizeof(base_noext));
-    snprintf(dst, dst_size, "%s/%s/%s%s", dir, subdir, base_noext, ext);
-}
+// Dependency functions
+const __time_t get_file_modified_time(const char *file_path)
+{ // {{{
+    struct stat file_stat;
+    if (stat(file_path, &file_stat) == -1) {
+        perror("stat");
+        return -1;
+    }
+    return file_stat.st_mtime;
+} // }}}
+const __time_t last_dependencies_modified(const char *file_path)
+{ // {{{
+    FILE *fp = fopen(file_path, "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Failed to open file %s for reading\n", file_path);
+        return -1;
+    }
+    __time_t last_modified = 0;
 
-bool check_deps(const char *path, const struct BuildContext *ctx) {
-    char output_file[PATH_MAX];
-    struct stat source_file_stat = STAT_FILE(path);
-    if (source_file_stat.st_mtim.tv_sec >= ctx->last_build) return true;
-    struct Path p = split_path(path);
-    char *line = NULL;
-    bool dep_has_changed = false;
-    build_file_path(output_file, sizeof(output_file), build_dir, p.dir, p.base, ".d");
-    FILE *depfile = fopen(output_file, "r");
-    if (!depfile) return true;
+    char* line;
     size_t line_len = 0;
-    while (getline(&line, &line_len, depfile) != -1) {
+    while (getline(&line, &line_len, fp) != -1) {
         char *tok = strtok(line, " ");
-        bool first = true;
         while (tok != NULL) {
-            if (first) { first = false; tok = strtok(NULL, " "); continue; }
             size_t len = strlen(tok);
-            if (tok[len - 1] == '\n') tok[--len] = 0;
-            struct stat filestat = STAT_FILE(tok);
-            if (filestat.st_mtim.tv_sec >= ctx->last_build) dep_has_changed = true;
+            if (tok[len - 1] == '\n') tok[--len] = '\0';
+            if (access(tok, F_OK) == 0) {
+                struct stat file_stat;
+                if (stat(tok, &file_stat) == -1) {
+                    fprintf(stderr, "Error: Failed to stat file %s\n", tok);
+                    continue;
+                }
+                if (file_stat.st_mtime > last_modified) {
+                    last_modified = file_stat.st_mtime;
+                }
+            }
             tok = strtok(NULL, " ");
         }
     }
-    if (line) free(line);
-    fclose(depfile);
-    return dep_has_changed;
-}
-int compile_file(const char *path, const struct BuildContext *ctx, bool *changed) {
-    char cmd[PATH_MAX], output_dir[PATH_MAX], obj_file[PATH_MAX];
-    struct Path p = split_path(path);
-    *changed = check_deps(path, ctx);
-    if (!*changed) return 0;
-    snprintf(output_dir, PATH_MAX, "%s/%s", build_dir, p.dir);
-    struct stat st = {0};
-    if (stat(output_dir, &st) == -1) if (rec_mkdir(output_dir) == -1) fprintf(stderr, "Failed %s\n", strerror(errno));
-    build_file_path(obj_file, sizeof(obj_file), build_dir, p.dir, p.base, ".o");
-    snprintf(cmd, PATH_MAX, "%s -c %s -o %s ", cc, path, obj_file);
-    append_flags(cmd, c_cflags, ARRAY_SIZE(c_cflags));
-    return exec(cmd);
-}
-bool compile_exe(void) {
-    char cmd[PATH_MAX] = {0}, obj_file[PATH_MAX];
-    snprintf(cmd, PATH_MAX, "%s -o %s/%s ", cc, build_dir, c_exe);
-    append_flags(cmd, c_cflags, ARRAY_SIZE(c_cflags));
-    for (int i = 0; i < (sizeof(c_src) / sizeof(c_src[0])); i++) {
-        const char *path = c_src[i];
-        struct Path p = split_path(path);
-        build_file_path(obj_file, sizeof(obj_file), build_dir, p.dir, p.base, ".o");
-        snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), "%s ", obj_file);
-    }
-    append_flags(cmd, c_clibs, ARRAY_SIZE(c_clibs));
-    return (exec(cmd) == 0);
-}
 
-bool parse_args(struct Config* conf, int argc, char *const argv[]) {
+    fclose(fp);
+    return last_modified;
+} // }}}
+
+bool serialize_lock_file(const char *file_path, struct LockFile *lock)
+{ // {{{
+    FILE *fp = fopen(file_path, "w+");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Failed to open lock file %s for writing\n", file_path);
+        return false;
+    }
+    int written = fwrite(lock, sizeof(struct LockFile), 1, fp);
+    if (written <= 0) {
+        fprintf(stderr, "Error: Failed to write lock file %s\n", file_path);
+        fprintf(stderr, "%s\n", strerror(errno));
+    }
+    fclose(fp);
+    return written > 0;
+} // }}}
+bool deserialize_lock_file(const char *file_path, struct LockFile *lock)
+{ // {{{
+    FILE *fp = fopen(file_path, "r");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Failed to open lock file %s for reading\n", file_path);
+        fprintf(stderr, "%s\n", strerror(errno));
+        return false;
+    }
+    int read = fread(lock, sizeof(struct LockFile), 1, fp);
+    if (read <= 0) {
+        fprintf(stderr, "Error: Failed to read lock file %s\n", file_path);
+        fprintf(stderr, "%s\n", strerror(errno));
+    }
+    fclose(fp);
+    return read > 0;
+} // }}}
+
+// Path manipulation functions
+void get_path_without_filename(const char *src, char *dst, size_t dst_size)
+{ // {{{
+    snprintf(dst, dst_size, "%s", src);
+    char *slash = strrchr(dst, '/');
+    if (slash) *slash = '\0';
+} // }}}
+void get_filename_without_path(const char *src, char *dst, size_t dst_size)
+{ // {{{
+    const char *slash = strrchr(src, '/');
+    if (slash) {
+        snprintf(dst, dst_size, "%s", slash + 1);
+    } else {
+        snprintf(dst, dst_size, "%s", src);
+    }
+    dst[dst_size - 1] = '\0';
+} // }}}
+
+// Build functions
+void *build_file(void *arg)
+{ // {{{
+    char *cmd = (char *)arg;
+    fflush(stdout);
+    int status = exec("%s", cmd);
+    if (status != 0) {
+        fprintf(stderr, "Error: build_file failed with status %d\n", status);
+    }
+    return NULL;
+} // }}}
+int make_targets(config_t *config, char* build_file_cmd[], unsigned int size)
+{ // {{{
+    for (unsigned int i = 0; i < size; i++) {
+        if (build_file_cmd[i] == NULL) {
+            fprintf(stderr, "Error: build_file_cmd[%u] is NULL\n", i);
+            return -1;
+        }
+
+        char* cmd = build_file_cmd[i];
+        char dir[PATH_MAX], filename[PATH_MAX];
+
+        // Strip the extension and get the directory and filename
+        strip_extension(config->src[i], filename, PATH_MAX);
+        get_filename_without_path(filename, filename, sizeof(filename));
+        get_path_without_filename(config->src[i], dir, sizeof(dir));
+
+        // Create the output directory if it doesn't exist
+        char full_dir[PATH_MAX];
+        snprintf(full_dir, PATH_MAX - strlen(full_dir), "%s/%s", config->dir, dir);
+        recursive_mkdir(full_dir);
+
+        // Check if the source file has been modified since the last build
+        const __time_t last_modified = get_file_modified_time(config->src[i]);
+
+        // Check the .d file for dependencies
+        char dep_file[PATH_MAX];
+        snprintf(dep_file, PATH_MAX - strlen(dep_file), "%s/%s.d", full_dir, filename);
+        if (access(dep_file, F_OK) == 0) {
+            // If the .d file exists, check its dependencies
+            __time_t deps_last_modified  = last_dependencies_modified(dep_file);
+
+            // If the dependencies and source file have not changed since the last build,
+            // skip building this file
+            if (deps_last_modified < lockfile.last_build && last_modified < lockfile.last_build) {
+                build_file_cmd[i][0] = '\0';
+                continue;
+            }
+        }
+
+        // Create the command to compile the source file
+        snprintf(cmd, PATH_MAX - strlen(cmd), "%s -c %s -o %s/%s.o ", config->cc, config->src[i], full_dir, filename);
+        append_strings(cmd, config->flags);
+    }
+    return 0;
+} // }}}
+int make_executable(config_t *config, char* build_exe_cmd)
+{ // {{{
+    if (config->exe == NULL) {
+        fprintf(stderr, "Error: config->exe is NULL\n");
+        return -1;
+    }
+    char* cmd = build_exe_cmd;
+    snprintf(cmd, PATH_MAX, "%s -o %s/%s ", config->cc, config->dir, config->exe);
+    for (unsigned int i = 0; i < get_array_length(config->src); i++) {
+        if (config->src[i] == NULL) {
+            fprintf(stderr, "Error: config->src[%u] is NULL\n", i);
+            return -1;
+        }
+        char filename[PATH_MAX];
+        strip_extension(config->src[i], filename, sizeof(filename));
+        snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), "%s/%s.o ", config->dir, filename);
+    }
+    append_strings(cmd, config->flags);
+    append_strings(cmd, config->libs);
+    return 0;
+} // }}}
+int make_build(BuildMode mode, char* cmd)
+{ // {{{
+    if (build.cc == NULL || build.file == NULL || build.exe == NULL) {
+        fprintf(stderr, "Error: Build configuration is incomplete\n");
+        return -1;
+    }
+    snprintf(cmd, PATH_MAX, "%s -o %s %s ", build.cc, build.exe, build.file);
+    switch (mode) {
+        case MODE_REL:
+            append_strings(cmd, (const char *[]){"-O2", "-lpthread", NULL});
+            break;
+        case MODE_DEV:
+            append_strings(cmd, (const char *[]){"-Wall", "-DDEBUG", "-g", "-lpthread", NULL});
+            break;
+        case MODE_NONE:
+            append_strings(cmd, (const char *[]){"-Wall", "-lpthread", NULL});
+            break;
+        default:
+            fprintf(stderr, "Error: Invalid build mode\n");
+            return -1;
+    }
+    return 0;
+} // }}}
+
+// Compile function
+int compile_build_file(const char *lock_file_path, int argc, char *argv[], InternalConfig *conf)
+{ // {{{
+    __time_t build_file_last_modified = get_file_modified_time(build.file);
+
+    // If the build file has been modified, rebuild it
+    if (build_file_last_modified >= lockfile.last_build ||
+            conf->mode != lockfile.last_mode || conf->clean) {
+
+        // Rebuild the build file
+        char build_file_cmd[PATH_MAX];
+        if (make_build(conf->mode, build_file_cmd) != 0) {
+            fprintf(stderr, "Error: make_build failed\n");
+            return -1;
+        }
+
+        if (exec("%s", build_file_cmd) != 0) {
+            fprintf(stderr, "Error: Failed to build the build file\n");
+            return -1;
+        }
+
+        lockfile.last_build = time(NULL);
+        lockfile.lock = false;
+        serialize_lock_file(lock_file_path, &lockfile);
+
+        char cmd[PATH_MAX];
+        snprintf(cmd, PATH_MAX, "%s", build.exe);
+        for (int i = 1; i < argc; i++) {
+            strcat(cmd, " ");
+            strcat(cmd, argv[i]);
+        }
+        if (exec("%s", cmd) != 0) {
+            fprintf(stderr, "Error: Failed to run the build file\n");
+            return -1;
+        }
+        exit(0); // Exit after running the build file
+    }
+
+    return 0; // No need to rebuild the build file
+} // }}}
+bool compile_files(config_t *config, bool multithreaded)
+{ // {{{
+    // Allocate memory for build commands
+    unsigned int size = get_array_length(c_config.src);
+    char* file_cmd[size];
+    pthread_t build_file_threads[size];
+    for (unsigned int i = 0; i < size; i++) {
+        file_cmd[i] = malloc(PATH_MAX);
+    }
+
+    // Create the build commands for each source file
+    if (make_targets(&c_config, file_cmd, size) != 0) {
+        fprintf(stderr, "Error: make_build_targets failed\n");
+        return -1;
+    }
+
+    // Run the build commands for each source file
+    int files_built = 0;
+    for (unsigned int i = 0; i < size; i++) {
+        if (multithreaded) {
+            if (file_cmd[i][0] == '\0') {
+                continue;
+            }
+            if (pthread_create(&build_file_threads[i], NULL, build_file, file_cmd[i]) != 0) {
+                fprintf(stderr, "Error: pthread_create failed\n");
+                return -1;
+            }
+            files_built++;
+        } else {
+            if (file_cmd[i][0] == '\0') {
+                continue;
+            }
+            build_file(file_cmd[i]);
+            files_built++;
+        }
+    }
+
+    // Wait for all threads to finish if multithreaded
+    for (unsigned int i = 0; i < size; i++) {
+        if (multithreaded) {
+            if (file_cmd[i][0] == '\0') {
+                continue;
+            }
+            pthread_join(build_file_threads[i], NULL);
+        }
+        free(file_cmd[i]);
+    }
+
+
+    return files_built;
+} // }}}
+bool compile_exe(config_t *config)
+{ // {{{
+    char build_exe_cmd[PATH_MAX];
+    if (make_executable(config, build_exe_cmd) != 0) {
+        fprintf(stderr, "Error: make_build_executable failed\n");
+        return false;
+    }
+    if (exec("%s", build_exe_cmd) != 0) {
+        fprintf(stderr, "Error: Failed to run the build command\n");
+        return false;
+    }
+    return true;
+} // }}}
+
+// Parse command line arguments
+bool parse_args(struct InternalConfig *conf, int argc, char *const argv[])
+{ // {{{
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--") == 0) {
             conf->run_argc = i;
             conf->run = true;
             break;
         }
-        if (!strcmp(argv[i], "dev")) conf->mode = MODE_DEV;
+        if (!strcmp(argv[i], "dbg")) conf->mode = MODE_DEV;
         else if (!strcmp(argv[i], "rel")) conf->mode = MODE_REL;
         else if (!strcmp(argv[i], "clean")) conf->clean = true;
+        else if (!strcmp(argv[i], "no-threading")) conf->threaded = false;
         else if (!strcmp(argv[i], "build-only")) conf->build_only = true;
-        else if (!strcmp(argv[i], "version")) { printf("Build version %s\n", build_ver); }
+        else if (!strcmp(argv[i], "version")) { printf("Build version %s\n", build.ver); return false; }
         else if (!strcmp(argv[i], "help")) { print_help(); return false; }
         else {
             printf("[\033[31mERROR\033[0m] Unknown command '%s'\n\n", argv[i]);
-            print_help();
             return false;
         }
     }
     return true;
-}
+} // }}}
 
-int main(int argc, char *argv[]) {
-    struct Config conf = {0};
-    if (!parse_args(&conf, argc, argv)) return 0;
-
-    char build_file_lock[PATH_MAX];
-    snprintf(build_file_lock, PATH_MAX, "%s/%s.lock", build_dir, build_exe);
-
-    struct BuildContext build_ctx = {0};
-    get_build(&build_ctx, build_file_lock);
-    if (build_ctx.last_mode != conf.mode || conf.clean) {
-        set_build(&build_ctx, build_file_lock);
-        struct stat st = {0};
-        if (stat(build_dir, &st) == 0) { exec("rm -dr %s", build_dir); }
+int main(int argc, char *argv[])
+{ // {{{
+    struct InternalConfig conf = {0};
+    conf.threaded = true; // Default to using multithreading
+    if (!parse_args(&conf, argc, argv)) {
+        return 0;
     }
 
-    struct stat st = {0};
-    if (stat(build_dir, &st) == -1) { if (rec_mkdir(build_dir) == -1) { printf("Failed %s\n", strerror(errno)); } }
-    if (build_ctx.lock) { printf("[\033[31mERROR\033[0m] Build in progress\n"); return 1; }
-    else { build_ctx.lock = true; set_build(&build_ctx, build_file_lock); }
-
-    struct stat build_file = STAT_FILE(build_c);
-    if ((build_ctx.last_modif < build_file.st_mtim.tv_sec) || build_ctx.last_mode != conf.mode || conf.build_only) {
-        int ret;
-        if (conf.mode == MODE_DEV) {
-            build_ctx.last_mode = MODE_DEV;
-            if ((ret = exec("%s %s -o %s -DDEBUG -g -Wall", build_cc, build_c, build_exe))) return ret;
-        } else if (conf.mode == MODE_REL) {
-            build_ctx.last_mode = MODE_REL;
-            if ((ret = exec("%s %s -o %s -DRELEASE -O3 -Wall", build_cc, build_c, build_exe))) return ret;
-        } else {
-            build_ctx.last_mode = MODE_NONE;
-            if ((ret = exec("%s %s -o %s -Wall", build_cc, build_c, build_exe))) return ret;
+    if (conf.clean) {
+        // Clean the build directory
+        if (exec("rm -rf %s", c_config.dir) != 0) {
+            fprintf(stderr, "Error: Failed to clean the build directory %s\n", c_config.dir);
+            return -1;
         }
-        build_ctx.last_modif = time(NULL);
-        build_ctx.last_build = time(NULL);
-        build_ctx.lock = false;
-        set_build(&build_ctx, build_file_lock);
-        if (!conf.build_only) {
-            char cmd[PATH_MAX];
-            snprintf(cmd, PATH_MAX, "%s", build_exe);
-            for (int i = 1; i < argc; i++) {
-                if (strcmp(argv[i], "clean") == 0) continue;
-                snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), " %s", argv[i]);
-            }
-            return exec(cmd);
-        } else return 0;
+        printf("[\033[32mCleaned\033[0m] %s\n", c_config.dir);
+        return 0; // Exit after cleaning
     }
-    bool change = false, file_changed = false;
-    for (int i = 0; i < (sizeof(c_src) / sizeof(c_src[0])); i++) {
-        int ret = compile_file(c_src[i], &build_ctx, &file_changed);
-        if (file_changed && ret != 0) {
-            printf("[\033[31mERROR\033[0m] Failed to build file\n");
-            build_ctx.lock = false;
-            set_build(&build_ctx, build_file_lock);
-            return 2;
+
+    // Create the build directory if it doesn't exist
+    recursive_mkdir(c_config.dir);
+
+    // Get the lock file path and deserialize the lock file
+    char lock_file_path[PATH_MAX];
+    snprintf(lock_file_path, PATH_MAX, "%s/%s.lock", c_config.dir, build.exe);
+    if (!deserialize_lock_file(lock_file_path, &lockfile)) {
+        serialize_lock_file(lock_file_path, &lockfile);
+    }
+
+    // Check if the build is locked
+    if (lockfile.lock) {
+        time_t current_time = time(NULL);
+        fprintf(stderr, "Error: Build is locked. Last modified: %ld seconds ago\n",
+                current_time - lockfile.last_build);
+        return -1;
+    }
+    lockfile.lock = true;
+
+    // Build the build file if it has changed
+    int ret = compile_build_file(lock_file_path, argc, argv, &conf);
+    if (ret != 0) {
+        lockfile.lock = false;
+        serialize_lock_file(lock_file_path, &lockfile);
+        return ret;
+    }
+
+    // If only building the build file, exit after building
+    if (conf.build_only) {
+        lockfile.lock = false;
+        serialize_lock_file(lock_file_path, &lockfile);
+        return 0;
+    }
+
+    // Compile the source files if they have changed
+    int files_built = compile_files(&c_config, conf.threaded);
+
+    // Run the build command to create the executable
+    if (files_built != 0) {
+        if (!compile_exe(&c_config)) {
+            fprintf(stderr, "Error: Failed to compile the executable\n");
+            lockfile.lock = false;
+            serialize_lock_file(lock_file_path, &lockfile);
+            return -1;
         }
-        change = change || file_changed;
+    } else {
+        printf("[\033[33mINF\033[0m] No files were changed\n");
     }
-    if (change && !compile_exe()) {
-        printf("[\033[31mERROR\033[0m] Failed to build exe\n");
-        build_ctx.lock = false;
-        set_build(&build_ctx, build_file_lock);
-        return 2;
-    }
-    build_ctx.last_build = time(NULL);
-    build_ctx.lock = false;
-    set_build(&build_ctx, build_file_lock);
-    int ret = 0;
+
+    // Update the lock file after the build is complete and release the lock
+    lockfile.last_build = time(NULL);
+    lockfile.lock = false;
+
+    // Serialize the lock file to save the state
+    serialize_lock_file(lock_file_path, &lockfile);
+
     if (conf.run) {
         char cmd[PATH_MAX];
-        snprintf(cmd, PATH_MAX, "%s/%s", build_dir, c_exe);
+        snprintf(cmd, PATH_MAX, "%s/%s", c_config.dir, c_config.exe);
         for (int i = conf.run_argc + 1; i < argc; i++)
             snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), " %s", argv[i]);
         ret = exec(cmd);
     }
-    return ret;
-}
+
+    return 0;
+} // }}}
