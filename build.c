@@ -267,7 +267,11 @@ void get_path_without_filename(const char *src, char *dst, size_t dst_size)
 { // {{{
     snprintf(dst, dst_size, "%s", src);
     char *slash = strrchr(dst, '/');
-    if (slash) *slash = '\0';
+    if (slash) {
+        *slash = '\0';
+    } else {
+        dst[0] = '\0';
+    }
 } // }}}
 void get_filename_without_path(const char *src, char *dst, size_t dst_size)
 { // {{{
