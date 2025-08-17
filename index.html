@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="./css/tokyo-night-dark.min.css">
+    <link rel="preconnect" href="https://fonts.gstatic.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@3.3.3/dist/tailwind.min.css">
     <script src="./js/highlight.min.js"></script>
     <title>Build Dot C</title>
 </head>
@@ -11,137 +14,197 @@
 <body>
     <script>
         async function fetchData() {
-            const response = await fetch('https://raw.githubusercontent.com/MitchNine/build_dot_c/refs/heads/master/build.c');
-            const data = await response.text();
-            document.getElementById('build_dot_c').innerHTML = hljs.highlight(
-                data, { language: 'c' }
-            ).value;
-        }
-        const unsecuredCopyToClipboard = (text) => {
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
             try {
-                document.execCommand('copy');
+                const response = await fetch('https://raw.githubusercontent.com/MitchNine/build_dot_c/refs/heads/master/build.c');
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.text();
+                if (window.hljs && hljs.highlight) {
+                    // highlight.js modern API: highlight(code, {language}) returns an object
+                    const highlighted = hljs.highlight(data, { language: 'c' });
+                    document.getElementById('build_dot_c').innerHTML = highlighted.value;
+                } else {
+                    // fallback: show raw text
+                    document.getElementById('build_dot_c').innerText = data;
+                }
             } catch (err) {
-                console.error('Unable to copy to clipboard', err);
+                document.getElementById('build_dot_c').innerText = '// Unable to load remote file: ' + err.message;
+                console.error(err);
             }
-            document.body.removeChild(textArea);
-        };
-
-        function copy_to_clipboard(elm_id) {
-            var text = document.getElementById(elm_id).innerText;
-            console.log(text)
-            if (window.isSecureContext && navigator.clipboard) {
-                navigator.clipboard.writeText(text);
-            } else {
-                unsecuredCopyToClipboard(text);
+        }
+        
+        async function downloadRemote(url, filename) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('Network response was not ok');
+                const blob = await res.blob();
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename || '';
+                document.body.appendChild(link);
+                link.click();
+                URL.revokeObjectURL(link.href);
+                document.body.removeChild(link);
+            } catch (err) {
+                console.error('Download failed, opening in new tab', err);
+                window.open(url, '_blank');
             }
-
         }
         fetchData();
     </script>
 
     <style>
-        body {
-            background-color: #1a1b26;
+        :root{
+            --bg:#0f1117;
+            --card:#0f1724;
+            --muted:#98a0c0;
+            --accent:#7aa2f7;
+            --accent-2:#9ece6a;
+            --scroll-track: rgba(255,255,255,0.02);
+            --scroll-thumb: rgba(255,255,255,0.06);
+            --scroll-thumb-hover: rgba(255,255,255,0.10);
         }
 
-        .title {
-            white-space: pre-wrap;
+        html,body{
+            height:100%;
+            margin:0;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+            background: linear-gradient(180deg,#0f1117 0%, #141620 60%);
+            color: #e6eef6;
+            -webkit-font-smoothing:antialiased;
+            -moz-osx-font-smoothing:grayscale;
+        }
+
+        .container{
+            max-width:1000px;
+            margin:36px auto;
+            padding:20px;
+        }
+
+        .title-card{
+            background: linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+            border: 1px solid rgba(255,255,255,0.03);
+            padding:20px 24px;
+            border-radius:12px;
+            display:flex;
+            align-items:center;
+            gap:16px;
+            box-shadow: 0 6px 20px rgba(2,6,23,0.6);
+        }
+
+        .title-card h1{
+            margin:0;
+            font-size:1.6rem;
+            letter-spacing:0.6px;
+            color:var(--accent-2);
+        }
+
+        .title-card p{ margin:0; color:var(--muted); font-size:0.95rem }
+
+        .controls{ display:flex; gap:8px; margin-left:auto }
+
+        .button_box{
             display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #9ece6a;
+            margin:12px 0 8px 0;
+            gap:8px;
+            justify-content:flex-end;
         }
 
-        .code_block {
-            background-color: #24283b;
-            word-wrap: normal;
-            color: white;
-            margin: auto;
-            margin-bottom: 200px;
-            padding: 5px;
-            overflow: scroll;
-            scrollbar-width: none;
-            max-width: 655;
-            border-radius: 5px;
+        button{
+            display:inline-flex;
+            align-items:center;
+            gap:8px;
+            padding:8px 10px;
+            background: linear-gradient(180deg,#394263,#2a3044);
+            color: #f6f8ff;
+            border: 1px solid rgba(255,255,255,0.04);
+            border-radius:8px;
+            cursor:pointer;
+            transition: transform .06s ease, background .08s ease;
+            font-weight:600;
+            font-size:0.95rem;
+        }
+
+        button:hover{ transform:translateY(-2px); }
+
+        button:active{ transform:translateY(0); }
+
+        button svg{ display:block }
+
+        .code_block{
+            background-color: var(--card);
+            color: #d8e2ff;
+            margin: 8px auto 200px auto;
+            padding: 12px;
+            overflow: auto;
+            scrollbar-width: thin;
+            max-width: 100%;
+            border-radius: 10px;
             z-index: 1;
+            box-shadow: 0 8px 30px rgba(2,6,23,0.6);
+            border: 1px solid rgba(255,255,255,0.03);
         }
 
-        .button_box {
-            display: flex;
-            max-width: 655;
-            margin: auto;
-            align-items: flex-end;
-            justify-content: right;
+        pre{ margin:0; font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-size:0.95rem; line-height:1.45; }
+
+        .code_block pre{ max-height:60vh; white-space:pre; }
+
+        .tooltip{ font-size:0.8rem; color:var(--muted) }
+
+        a.download-link{ color:inherit; text-decoration:none; display:inline-flex; align-items:center; gap:8px }
+
+        /* Custom scrollbars - WebKit based browsers */
+        ::-webkit-scrollbar{ width:12px; height:12px }
+        ::-webkit-scrollbar-track{ background: transparent }
+        ::-webkit-scrollbar-thumb{
+            background: linear-gradient(180deg, rgba(122,162,247,0.14), rgba(158,206,106,0.06));
+            border-radius:10px;
+            border: 3px solid transparent;
+            background-clip: content-box;
+        }
+        ::-webkit-scrollbar-thumb:hover{
+            background: linear-gradient(180deg, rgba(122,162,247,0.22), rgba(158,206,106,0.12));
         }
 
-        button {
-            padding: 5px;
-            background-color: #565f89;
-            border: none;
-            border-radius: 5px;
-            margin-top: 5px;
-            margin: 5px;
-            z-index: 2;
-            position: relative;
+        /* Make the code block scrollbar a bit more visible */
+        .code_block::-webkit-scrollbar{ width:12px; }
+        .code_block::-webkit-scrollbar-track{ background: rgba(255,255,255,0.015); border-radius:10px }
+        .code_block::-webkit-scrollbar-thumb{
+            background: linear-gradient(180deg, rgba(122,162,247,0.20), rgba(158,206,106,0.08));
+            border-radius:10px; border:3px solid transparent; background-clip: content-box;
         }
+        .code_block::-webkit-scrollbar-thumb:hover{ background: linear-gradient(180deg, rgba(122,162,247,0.32), rgba(158,206,106,0.16)); }
 
-        button:hover {
-            background-color: #34394d;
-        }
+        /* Firefox scrollbar styling */
+        .code_block{ scrollbar-width: thin; scrollbar-color: rgba(122,162,247,0.20) rgba(255,255,255,0.015); }
+        html{ scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 
-        button:active {
-            background-color: #1a1b26;
+        @media (max-width:640px){
+            .title-card{ flex-direction:column; align-items:flex-start }
+            .controls{ width:100%; justify-content:space-between }
         }
     </style>
-    <div class="title">
-██████╗ ██╗   ██╗██╗██╗     ██████╗     ██████╗
-██╔══██╗██║   ██║██║██║     ██╔══██╗   ██╔════╝
-██████╔╝██║   ██║██║██║     ██║  ██║   ██║
-██╔══██╗██║   ██║██║██║     ██║  ██║   ██║
-██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗
-╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝
-    </div>
-    <div class="button_box">
-        <button type="button">
-            <a href="https://raw.githubusercontent.com/MitchNine/build_dot_c/refs/heads/master/build.c" download="build.c">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="30" height="30">
-                    <g id="SVGRepo_bgCarrier" stroke-width="0"></g>
-                    <g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g>
-                    <g id="SVGRepo_iconCarrier">
-                        <path fill-rule="evenodd" clip-rule="evenodd"
-                            d="M23 22C23 22.5523 22.5523 23 22 23H2C1.44772 23 1 22.5523 1 22C1 21.4477 1.44772 21 2 21H22C22.5523 21 23 21.4477 23 22Z"
-                            fill="#0F0F0F"></path>
-                        <path fill-rule="evenodd" clip-rule="evenodd"
-                            d="M13.3099 18.6881C12.5581 19.3396 11.4419 19.3396 10.6901 18.6881L5.87088 14.5114C4.47179 13.2988 5.32933 11 7.18074 11L9.00001 11V3C9.00001 1.89543 9.89544 1 11 1L13 1C14.1046 1 15 1.89543 15 3L15 11H16.8193C18.6707 11 19.5282 13.2988 18.1291 14.5114L13.3099 18.6881ZM11.3451 16.6091C11.7209 16.9348 12.2791 16.9348 12.6549 16.6091L16.8193 13H14.5C13.6716 13 13 12.3284 13 11.5V3L11 3V11.5C11 12.3284 10.3284 13 9.50001 13L7.18074 13L11.3451 16.6091Z"
-                            fill="#0F0F0F"></path>
-                    </g>
-                </svg>
-            </a>
-        </button>
-        <button type="button" onclick="copy_to_clipboard('build_dot_c')">
-            <svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg"
-                xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="30" height="30"
-                viewBox="0 0 115.77 122.88" style="enable-background:new 0 0 115.77 122.88" xml:space="preserve">
-                <style type="text/css">
-                    .st0 {
-                        fill-rule: evenodd;
-                        clip-rule: evenodd;
-                    }
-                </style>
-                <g>
-                    <path class="st0"
-                        d="M89.62,13.96v7.73h12.19h0.01v0.02c3.85,0.01,7.34,1.57,9.86,4.1c2.5,2.51,4.06,5.98,4.07,9.82h0.02v0.02 v73.27v0.01h-0.02c-0.01,3.84-1.57,7.33-4.1,9.86c-2.51,2.5-5.98,4.06-9.82,4.07v0.02h-0.02h-61.7H40.1v-0.02 c-3.84-0.01-7.34-1.57-9.86-4.1c-2.5-2.51-4.06-5.98-4.07-9.82h-0.02v-0.02V92.51H13.96h-0.01v-0.02c-3.84-0.01-7.34-1.57-9.86-4.1 c-2.5-2.51-4.06-5.98-4.07-9.82H0v-0.02V13.96v-0.01h0.02c0.01-3.85,1.58-7.34,4.1-9.86c2.51-2.5,5.98-4.06,9.82-4.07V0h0.02h61.7 h0.01v0.02c3.85,0.01,7.34,1.57,9.86,4.1c2.5,2.51,4.06,5.98,4.07,9.82h0.02V13.96L89.62,13.96z M79.04,21.69v-7.73v-0.02h0.02 c0-0.91-0.39-1.75-1.01-2.37c-0.61-0.61-1.46-1-2.37-1v0.02h-0.01h-61.7h-0.02v-0.02c-0.91,0-1.75,0.39-2.37,1.01 c-0.61,0.61-1,1.46-1,2.37h0.02v0.01v64.59v0.02h-0.02c0,0.91,0.39,1.75,1.01,2.37c0.61,0.61,1.46,1,2.37,1v-0.02h0.01h12.19V35.65 v-0.01h0.02c0.01-3.85,1.58-7.34,4.1-9.86c2.51-2.5,5.98-4.06,9.82-4.07v-0.02h0.02H79.04L79.04,21.69z M105.18,108.92V35.65v-0.02 h0.02c0-0.91-0.39-1.75-1.01-2.37c-0.61-0.61-1.46-1-2.37-1v0.02h-0.01h-61.7h-0.02v-0.02c-0.91,0-1.75,0.39-2.37,1.01 c-0.61,0.61-1,1.46-1,2.37h0.02v0.01v73.27v0.02h-0.02c0,0.91,0.39,1.75,1.01,2.37c0.61,0.61,1.46,1,2.37,1v-0.02h0.01h61.7h0.02 v0.02c0.91,0,1.75-0.39,2.37-1.01c0.61-0.61,1-1.46,1-2.37h-0.02V108.92L105.18,108.92z" />
-                </g>
-            </svg>
-        </button>
-    </div>
-    <div class="code_block">
-        <pre><code id="build_dot_c"></code></pre>
+    <div class="container">
+        <div class="title-card">
+            <div>
+                <h1>Build.c</h1>
+                <p class="tooltip">A tiny single-file build script for C/C++ projects — view or download the source below.</p>
+            </div>
+            <div class="controls">
+                <div class="button_box">
+                    <button type="button" class="download-btn" aria-label="Download build.c" onclick="downloadRemote('https://raw.githubusercontent.com/MitchNine/build_dot_c/refs/heads/master/build.c','build.c')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                            <polyline points="7 10 12 15 17 10"></polyline>
+                            <path d="M12 15V3"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="code_block">
+            <pre><code id="build_dot_c" class="hljs"></code></pre>
+        </div>
     </div>
 
 </body>
