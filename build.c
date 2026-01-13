@@ -131,6 +131,7 @@ typedef struct InternalConfig {
     int run_argc;     // Number of arguments to pass to the build file when running it
     BuildMode mode;   // Build mode to use (none, development, or release)
 } InternalConfig;
+static bool is_using_cpp = false;
 
 void print_help() {
     printf("\n"
@@ -141,7 +142,7 @@ void print_help() {
 "██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗\n"
 "╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝\n"
 "version %s\n\n"
-"Usage: ./build [dbg|rel|clean|build-only|version|help] -- [ARGS]...\n"
+"Usage: ./build [dbg|rel|clean|build-only|j [NUM]|version|help] -- [ARGS]...\n"
 "Builds C/C++ target applications using the configuration provided in the\n"
 "build.c file. The build executable will rebuild itself when changes are\n"
 "detected within the build.c file.\n\n"
@@ -150,6 +151,7 @@ void print_help() {
 "    rel            Build the target executable with -DRELEASE enabled\n"
 "    clean          Removes the output directory\n"
 "    build-only     Only builds the build executable not the target executable\n"
+"    j [NUM]        Sets the number of threads to use for building source files\n"
 "    version        Displays the version of the build.c\n"
 "    help           Displays this text\n"
 "    --             Runs the executable and all args after the double dashes\n"
@@ -375,6 +377,7 @@ int make_targets(const config_t *config, char* build_file_cmd[], unsigned int si
                 snprintf(cmd, PATH_MAX - strlen(cmd), "%s -c %s -o %s/%s.o ",
                         config->cc.c, config->src[i], full_dir, filename);
             } else {
+                is_using_cpp = true;
                 snprintf(cmd, PATH_MAX - strlen(cmd), "%s -c %s -o %s/%s.o ",
                         config->cc.cpp, config->src[i], full_dir, filename);
             }
@@ -394,7 +397,7 @@ int make_executable(const config_t *config, char* build_exe_cmd)
         return -1;
     }
     char* const cmd = build_exe_cmd;
-    snprintf(cmd, PATH_MAX, "%s -o %s/%s ", config->cc.cpp, config->dir, config->exe);
+    snprintf(cmd, PATH_MAX, "%s -o %s/%s ", is_using_cpp ? config->cc.cpp : config->cc.c, config->dir, config->exe);
     for (unsigned int i = 0; i < get_array_length(config->src); i++) {
         if (config->src[i] == NULL) {
             fprintf(stderr, "Error: config->src[%u] is NULL\n", i);
