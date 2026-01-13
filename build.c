@@ -29,15 +29,22 @@
 
 #include <stdlib.h>
 
+static const int MAX_CPU_CORES = 8;
+typedef struct Compilers {
+    const char *c;
+    const char *cpp;
+} Compilers;
 struct Config {
-    const char *cc;             // Compiler to use for building target and build.c
-    const char *exe;            // Target executable name
-    const char *dir;            // The output directory that the target executable will end up
-    const char *const *src;     // List of all the .c files to be compiled
-    const char *const *flags;   // List of all the flags that will be sent to the compiler
-    const char *const *libs;    // List of libraries to link against
+    const Compilers cc;          // Compiler to use for building target and build.c
+    const char *exe;             // Target executable name
+    const char *dir;             // The output directory that the target executable will end up
+    const char *const *src;      // List of all the .c files to be compiled
+    const char *const *flags;    // List of all the flags that will be sent to the compiler
+    const char *const *incs;     // List of libraries to link against
+    const char *const *lib_incs; // List of libraries to link against
+    const char *const *libs;     // List of libraries to link against
 } c_config = {
-    .cc = "gcc",
+    .cc = (Compilers){ .c = "gcc", .cpp = "g++" },
     .exe = "example_app",
     .dir = "./out",
 
@@ -58,6 +65,14 @@ struct Config {
         NULL, // Sentinel to mark the end of the array
     },
 
+    .incs = (const char *[]) {
+        NULL, // Sentinel to mark the end of the array
+    },
+
+    .lib_incs = (const char *[]) {
+        NULL, // Sentinel to mark the end of the array
+    },
+
     .libs = (const char *[]) {
         NULL, // Sentinel to mark the end of the array
     },
@@ -69,7 +84,7 @@ struct Build {
     const char *file;  // Target executable name
     const char *exe;   // The name of the executable the build.c file will compile into
     const char *ver;   // Version of the build.c
-} build = { "clang", "./build.c", "./build", "1.0.0" };
+} build = { "clang", "./build.c", "./build", "1.1.0" };
 typedef struct Build build_t;
 
 /*****************************************************************************
@@ -90,9 +105,11 @@ typedef struct Build build_t;
 #include <unistd.h>
 #include <utime.h>
 #include <pthread.h>
-#define STAT_FILE(file_path) \
-({ struct stat __stat; stat(file_path, &__stat); __stat; })
+#include <stdatomic.h>
 
+static int g_thread_count = 0;
+static pthread_mutex_t g_thread_count_mutex;
+static pthread_mutex_t g_thread_print_mutex;
 typedef enum BuildMode {
     MODE_NONE,
     MODE_DEV,
@@ -107,12 +124,12 @@ struct LockFile {
 } lockfile = { false, 0, MODE_NONE };
 
 typedef struct InternalConfig {
-    bool run;        // Indicates if the build should run after building
-    bool clean;      // Indicates if the build directory should be cleaned before building
-    bool build_only; // Indicates if only the build file should be built without running it
-    bool threaded;   // Indicates if the build should be done in a threaded manner
-    int run_argc;    // Number of arguments to pass to the build file when running it
-    BuildMode mode;  // Build mode to use (none, development, or release)
+    bool run;         // Indicates if the build should run after building
+    bool clean;       // Indicates if the build directory should be cleaned before building
+    bool build_only;  // Indicates if only the build file should be built without running it
+    int thread_count; // Indicates if the build should be done in a threaded manner
+    int run_argc;     // Number of arguments to pass to the build file when running it
+    BuildMode mode;   // Build mode to use (none, development, or release)
 } InternalConfig;
 
 void print_help() {
@@ -124,7 +141,7 @@ void print_help() {
 "██████╔╝╚██████╔╝██║███████╗██████╔╝██╗╚██████╗\n"
 "╚═════╝  ╚═════╝ ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝\n"
 "version %s\n\n"
-"Usage: ./build [dbg|rel|clean|no-threading|build-only|version|help] -- [ARGS]...\n"
+"Usage: ./build [dbg|rel|clean|build-only|version|help] -- [ARGS]...\n"
 "Builds C/C++ target applications using the configuration provided in the\n"
 "build.c file. The build executable will rebuild itself when changes are\n"
 "detected within the build.c file.\n\n"
@@ -132,7 +149,6 @@ void print_help() {
 "    dbg            Build the target executable with -DDEBUG enabled\n"
 "    rel            Build the target executable with -DRELEASE enabled\n"
 "    clean          Removes the output directory\n"
-"    no-threading   Stops from using multithread for building files\n"
 "    build-only     Only builds the build executable not the target executable\n"
 "    version        Displays the version of the build.c\n"
 "    help           Displays this text\n"
@@ -142,20 +158,34 @@ void print_help() {
 "    ./build dev -- --file=./output/\n", build.ver);
 }
 
+static inline void print(const char *section, const char *color, const char *fmt, ...) {
+    va_list va;
+    va_start(va, fmt);
+    pthread_mutex_lock(&g_thread_print_mutex);
+    if (isatty(1) == 1) {
+        printf("[\033[%sm%s\033[0m] ", color, section);
+    } else {
+        printf("[%s] ", section);
+    }
+    vprintf(fmt, va);
+    pthread_mutex_unlock(&g_thread_print_mutex);
+    va_end(va);
+}
+
 // Utility functions
 int exec(const char *format, ...)
 { // {{{
-    char cmd[PATH_MAX], buff[PATH_MAX];
+    char cmd[PATH_MAX];
     va_list val;
     va_start(val, format);
     vsprintf(cmd, format, val);
     va_end(val);
-    printf("[\e[35mCMD\e[0m] %s\n", cmd);
+    print("LOAD", "34", "%s\n", cmd);
     fflush(stdout);
-    FILE *fp = popen(cmd, "r");
-    assert(fp && "popen failed");
-    while (fgets(buff, sizeof(buff), fp) != NULL) printf("%s", buff);
-    return pclose(fp);
+    int status = system(cmd);
+    print("DONE", "32", "%s\n", cmd);
+    fflush(stdout);
+    return WEXITSTATUS(status);
 } // }}}
 int recursive_mkdir(const char *dir)
 { // {{{
@@ -249,8 +279,9 @@ bool deserialize_lock_file(const char *file_path, struct LockFile *lock)
 { // {{{
     FILE *fp = fopen(file_path, "r");
     if (fp == NULL) {
-        fprintf(stderr, "Error: Failed to open lock file %s for reading\n", file_path);
-        fprintf(stderr, "%s\n", strerror(errno));
+        // TODO: Ignore filed to open lock file when no output directory is available
+        // fprintf(stderr, "Error: Failed to open lock file %s for reading\n", file_path);
+        // fprintf(stderr, "%s\n", strerror(errno));
         return false;
     }
     int read = fread(lock, sizeof(struct LockFile), 1, fp);
@@ -285,7 +316,7 @@ void get_filename_without_path(const char *src, char *dst, size_t dst_size)
 } // }}}
 
 // Build functions
-void *build_file(void *arg)
+void *build_file(const void *arg)
 { // {{{
     const char *cmd = (const char *)arg;
     fflush(stdout);
@@ -293,6 +324,9 @@ void *build_file(void *arg)
     if (status != 0) {
         fprintf(stderr, "Error: build_file failed with status %d\n", status);
     }
+    pthread_mutex_lock(&g_thread_count_mutex);
+    g_thread_count = g_thread_count - 1;
+    pthread_mutex_unlock(&g_thread_count_mutex);
     return NULL;
 } // }}}
 int make_targets(const config_t *config, char* build_file_cmd[], unsigned int size)
@@ -313,7 +347,7 @@ int make_targets(const config_t *config, char* build_file_cmd[], unsigned int si
 
         // Create the output directory if it doesn't exist
         char full_dir[PATH_MAX];
-        snprintf(full_dir, PATH_MAX - strlen(full_dir), "%s/%s", config->dir, dir);
+        snprintf(full_dir, PATH_MAX - strlen(full_dir) - 2, "%s/%s", config->dir, dir);
         recursive_mkdir(full_dir);
 
         // Check if the source file has been modified since the last build
@@ -321,7 +355,7 @@ int make_targets(const config_t *config, char* build_file_cmd[], unsigned int si
 
         // Check the .d file for dependencies
         char dep_file[PATH_MAX];
-        snprintf(dep_file, PATH_MAX - strlen(dep_file), "%s/%s.d", full_dir, filename);
+        snprintf(dep_file, PATH_MAX - strlen(dep_file) - 2, "%s/%s.d", full_dir, filename);
         if (access(dep_file, F_OK) == 0) {
             // If the .d file exists, check its dependencies
             __time_t deps_last_modified  = last_dependencies_modified(dep_file);
@@ -335,8 +369,21 @@ int make_targets(const config_t *config, char* build_file_cmd[], unsigned int si
         }
 
         // Create the command to compile the source file
-        snprintf(cmd, PATH_MAX - strlen(cmd), "%s -c %s -o %s/%s.o ", config->cc, config->src[i], full_dir, filename);
+        const char *extension = strrchr(config->src[i], '.');
+        if (extension != NULL) {
+            if (strstr(extension, "cpp") == NULL) {
+                snprintf(cmd, PATH_MAX - strlen(cmd), "%s -c %s -o %s/%s.o ",
+                        config->cc.c, config->src[i], full_dir, filename);
+            } else {
+                snprintf(cmd, PATH_MAX - strlen(cmd), "%s -c %s -o %s/%s.o ",
+                        config->cc.cpp, config->src[i], full_dir, filename);
+            }
+        } else {
+            snprintf(cmd, PATH_MAX - strlen(cmd), "%s -c %s -o %s/%s.o ",
+                    config->cc.c, config->src[i], full_dir, filename);
+        }
         append_strings(cmd, config->flags);
+        append_strings(cmd, config->incs);
     }
     return 0;
 } // }}}
@@ -347,7 +394,7 @@ int make_executable(const config_t *config, char* build_exe_cmd)
         return -1;
     }
     char* const cmd = build_exe_cmd;
-    snprintf(cmd, PATH_MAX, "%s -o %s/%s ", config->cc, config->dir, config->exe);
+    snprintf(cmd, PATH_MAX, "%s -o %s/%s ", config->cc.cpp, config->dir, config->exe);
     for (unsigned int i = 0; i < get_array_length(config->src); i++) {
         if (config->src[i] == NULL) {
             fprintf(stderr, "Error: config->src[%u] is NULL\n", i);
@@ -358,6 +405,8 @@ int make_executable(const config_t *config, char* build_exe_cmd)
         snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), "%s/%s.o ", config->dir, filename);
     }
     append_strings(cmd, config->flags);
+    append_strings(cmd, config->incs);
+    append_strings(cmd, config->lib_incs);
     append_strings(cmd, config->libs);
     return 0;
 } // }}}
@@ -386,7 +435,7 @@ int make_build(const BuildMode mode, char* cmd)
 } // }}}
 
 // Compile function
-int compile_build_file(const char *lock_file_path, int argc, char *argv[], const InternalConfig *conf)
+int compile_build_file(const char *lock_file_path, int argc, char const *const argv[], const InternalConfig *conf)
 { // {{{
     __time_t build_file_last_modified = get_file_modified_time(build.file);
 
@@ -435,7 +484,7 @@ int compile_build_file(const char *lock_file_path, int argc, char *argv[], const
 
     return 0; // No need to rebuild the build file
 } // }}}
-bool compile_files(const config_t *config, bool multithreaded)
+int compile_files(const config_t *config, const InternalConfig *internal_config)
 { // {{{
     (void)config; // Mark as intentionally unused
     // Allocate memory for build commands
@@ -455,11 +504,23 @@ bool compile_files(const config_t *config, bool multithreaded)
     // Run the build commands for each source file
     int files_built = 0;
     for (unsigned int i = 0; i < size; i++) {
-        if (multithreaded) {
+        if (internal_config->thread_count > 0) {
             if (file_cmd[i][0] == '\0') {
                 continue;
             }
-            if (pthread_create(&build_file_threads[i], NULL, build_file, file_cmd[i]) != 0) {
+            while (true) {
+                pthread_mutex_lock(&g_thread_count_mutex);
+                if (g_thread_count < MAX_CPU_CORES) {
+                    pthread_mutex_unlock(&g_thread_count_mutex);
+                    break;
+                }
+                pthread_mutex_unlock(&g_thread_count_mutex);
+                usleep(100);
+            }
+            pthread_mutex_lock(&g_thread_count_mutex);
+            g_thread_count = g_thread_count + 1;
+            pthread_mutex_unlock(&g_thread_count_mutex);
+            if (pthread_create(&build_file_threads[i], NULL, (void *(*)(void *))build_file, file_cmd[i]) != 0) {
                 fprintf(stderr, "Error: pthread_create failed\n");
                 return -1;
             }
@@ -475,7 +536,7 @@ bool compile_files(const config_t *config, bool multithreaded)
 
     // Wait for all threads to finish if multithreaded
     for (unsigned int i = 0; i < size; i++) {
-        if (multithreaded) {
+        if (internal_config->thread_count > 0) {
             if (file_cmd[i][0] == '\0') {
                 continue;
             }
@@ -502,7 +563,7 @@ bool compile_exe(const config_t *config)
 } // }}}
 
 // Parse command line arguments
-bool parse_args(struct InternalConfig *conf, int argc, char *const argv[])
+bool parse_args(struct InternalConfig *conf, int argc, const char *const argv[])
 { // {{{
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--") == 0) {
@@ -513,22 +574,36 @@ bool parse_args(struct InternalConfig *conf, int argc, char *const argv[])
         if (!strcmp(argv[i], "dbg")) conf->mode = MODE_DEV;
         else if (!strcmp(argv[i], "rel")) conf->mode = MODE_REL;
         else if (!strcmp(argv[i], "clean")) conf->clean = true;
-        else if (!strcmp(argv[i], "no-threading")) conf->threaded = false;
         else if (!strcmp(argv[i], "build-only")) conf->build_only = true;
         else if (!strcmp(argv[i], "version")) { printf("Build version %s\n", build.ver); return false; }
         else if (!strcmp(argv[i], "help")) { print_help(); return false; }
+        else if (argv[i][0] == 'j') {
+            int threads = 0;
+            if (strlen(argv[i]) > 1) {
+                const char *p = argv[i]+1;
+                threads = atoi(p);
+            } else if (i + 1 <= argc) {
+                threads = atoi(argv[++i]);
+            } else {
+                fprintf(stderr, "Error: Failed to pass thread count\n");
+                exit(1);
+            }
+            print("INF", "1", "Threads: %d\n", threads);
+            conf->thread_count = threads;
+
+        }
         else {
-            printf("[\033[31mERROR\033[0m] Unknown command '%s'\n\n", argv[i]);
+            print("ERROR", "31", "Unknown command '%s'\n\n", argv[i]);
             return false;
         }
     }
     return true;
 } // }}}
 
-int main(int argc, char *argv[])
+int main(int argc, const char *const argv[])
 { // {{{
     struct InternalConfig conf = {0};
-    conf.threaded = true; // Default to using multithreading
+    conf.thread_count = MAX_CPU_CORES;
     if (!parse_args(&conf, argc, argv)) {
         return 0;
     }
@@ -539,7 +614,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "Error: Failed to clean the build directory %s\n", c_config.dir);
             return -1;
         }
-        printf("[\033[32mCleaned\033[0m] %s\n", c_config.dir);
+        print("INF", "1", "Cleaned: %s\n", c_config.dir);
         return 0; // Exit after cleaning
     }
 
@@ -574,6 +649,7 @@ int main(int argc, char *argv[])
 
     // If only building the build file, exit after building
     if (conf.build_only) {
+        print("INF", "1", "Build only mode\n");
         lockfile.last_mode = conf.mode;
         lockfile.lock = false;
         lockfile.rebuilding = false;
@@ -582,7 +658,7 @@ int main(int argc, char *argv[])
     }
 
     // Compile the source files if they have changed
-    int files_built = compile_files(&c_config, conf.threaded);
+    int files_built = compile_files(&c_config, &conf);
 
     // Run the build command to create the executable
     if (files_built != 0) {
@@ -595,7 +671,7 @@ int main(int argc, char *argv[])
             return -1;
         }
     } else {
-        printf("[\033[33mINF\033[0m] No files were changed\n");
+        print("INF", "1", "No files were changed\n");
     }
 
     // Update the lock file after the build is complete and release the lock
@@ -612,7 +688,7 @@ int main(int argc, char *argv[])
         snprintf(cmd, PATH_MAX, "%s/%s", c_config.dir, c_config.exe);
         for (int i = conf.run_argc + 1; i < argc; i++)
             snprintf(cmd + strlen(cmd), PATH_MAX - strlen(cmd), " %s", argv[i]);
-        ret = exec(cmd);
+        return exec(cmd);
     }
 
     return 0;
