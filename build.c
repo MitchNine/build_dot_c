@@ -160,7 +160,8 @@ void print_help() {
 "    ./build dev -- --file=./output/\n", build.ver);
 }
 
-static inline void print(const char *section, const char *color, const char *fmt, ...) {
+static inline void print(const char *section, const char *color, const char *fmt, ...)
+{ // {{{
     va_list va;
     va_start(va, fmt);
     pthread_mutex_lock(&g_thread_print_mutex);
@@ -172,7 +173,7 @@ static inline void print(const char *section, const char *color, const char *fmt
     vprintf(fmt, va);
     pthread_mutex_unlock(&g_thread_print_mutex);
     va_end(va);
-}
+} // }}}
 
 // Utility functions
 int exec(const char *format, ...)

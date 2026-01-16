@@ -1,5 +1,6 @@
 <img width="454" height="150" alt="Build Dot C" src="https://github.com/user-attachments/assets/c42238d4-0d0c-48c9-9be1-299c32ae9447" />
 
+[Build Dot C](https://mitchnine.github.io/build_dot_c/)
 
 A self-hosting build system for C/C++ projects, configured entirely in a single `build.c` file.  
 The build executable will automatically rebuild itself when changes are detected in `build.c`.
